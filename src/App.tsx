@@ -33,7 +33,7 @@ import {
   AddMoreProducts
 } from './components/UI';
 import { ImageCard } from './components/ImageCard';
-import { ai, MODELS, getAI } from './services/geminiService';
+import { ai, MODELS, getAI, validateApiKey } from './services/geminiService';
 import { useAuth } from './context/AuthContext';
 import { LoginPage } from './components/LoginPage';
 import { AwaitingApproval } from './components/AwaitingApproval';
@@ -68,6 +68,9 @@ export default function App() {
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [customApiKey, setCustomApiKey] = useState(localStorage.getItem('GEMINI_CUSTOM_API_KEY') || '');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [isValidatingKey, setIsValidatingKey] = useState(false);
+  const [validationError, setValidationError] = useState('');
+  const [validationWarning, setValidationWarning] = useState(false);
 
   // Results
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
@@ -314,7 +317,7 @@ export default function App() {
       Kembalikan HANYA dalam format JSON yang valid dengan kunci "backgrounds" (array of strings).`;
 
       const response = await ai.models.generateContent({
-        model: MODELS.TEXT,
+        model: MODELS.PRO,
         contents: [{ parts: [{ text: prompt }, ...imageParts] }],
         config: {
           systemInstruction: systemPrompt,
@@ -450,7 +453,7 @@ export default function App() {
       const systemPrompt = `You are an expert Creative Director. Your task: ${contextPrompt}. Return JSON with "shots" array of ${count} objects: {name, prompt, videoPrompt, script}.`;
 
       const response = await ai.models.generateContent({
-        model: MODELS.TEXT,
+        model: MODELS.PRO,
         contents: [{ parts: [{ text: `Generate ${count} sequential storyboard shots.` }, ...imageParts] }],
         config: {
           systemInstruction: systemPrompt,
@@ -1066,16 +1069,50 @@ export default function App() {
                   </div>
 
                   <button
-                    onClick={() => {
-                      localStorage.setItem('GEMINI_CUSTOM_API_KEY', customApiKey);
-                      setShowApiKeyModal(false);
+                    onClick={async () => {
+                      if (!customApiKey.trim()) {
+                        setValidationError('API Key tidak boleh kosong.');
+                        return;
+                      }
+
+                      if (validationWarning) {
+                        localStorage.setItem('GEMINI_CUSTOM_API_KEY', customApiKey);
+                        setShowApiKeyModal(false);
+                        window.location.reload();
+                        return;
+                      }
+                      
                       playClickSound();
-                      window.location.reload();
+                      setIsValidatingKey(true);
+                      setValidationError('');
+                      setValidationWarning(false);
+                      
+                      const result = await validateApiKey(customApiKey);
+                      setIsValidatingKey(false);
+                      
+                      if (result.valid === true) {
+                        localStorage.setItem('GEMINI_CUSTOM_API_KEY', customApiKey);
+                        setShowApiKeyModal(false);
+                        window.location.reload();
+                      } else if (result.valid === 'warning') {
+                        setValidationError(result.message);
+                        setValidationWarning(true);
+                      } else {
+                        setValidationError(result.message || 'API Key Tidak Valid!');
+                        setValidationWarning(false);
+                      }
                     }}
-                    className="neo-btn w-full bg-[#00E5FF] border-4 border-black py-5 rounded-3xl font-black text-xl uppercase neo-shadow"
+                    disabled={isValidatingKey}
+                    className={`neo-btn w-full bg-[#00E5FF] border-4 border-black py-5 rounded-3xl font-black text-xl uppercase neo-shadow ${isValidatingKey ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    SIMPAN & AKTIFKAN AKUN
+                    {isValidatingKey ? 'MEMVALIDASI...' : (validationWarning ? 'TETAP SIMPAN & AKTIFKAN' : 'SIMPAN & AKTIFKAN AKUN')}
                   </button>
+
+                  {validationError && (
+                    <p className={`${validationWarning ? 'text-yellow-600' : 'text-[#FF5252]'} font-black text-xs text-center uppercase animate-bounce`}>
+                      {validationWarning ? '⚠️' : '❌'} {validationError}
+                    </p>
+                  )}
 
                   <div className="text-center">
                     <button
